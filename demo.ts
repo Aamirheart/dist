@@ -136,7 +136,9 @@ if (joinBtn) {
             room.remoteParticipants.forEach((p) => {
                 renderParticipant(p, p.identity);
                 p.trackPublications.forEach(pub => {
-                    if (pub.track && pub.isSubscribed) handleTrackAttached(pub.track as RemoteTrack, p);
+                    if (pub.track && pub.isSubscribed) {
+                        handleTrackSubscribed(pub.track as RemoteTrack, pub, p);
+                    }
                 });
             });
 
@@ -153,7 +155,11 @@ if (joinBtn) {
 }
 
 // 4. CALL LOGIC & RENDERING
-function handleTrackAttached(track: RemoteTrack, participant: Participant) {
+function handleTrackSubscribed(
+    track: RemoteTrack,
+    publication: any,
+    participant: Participant
+) {
     if (track.kind === Track.Kind.Video) {
         const el = track.attach();
         const vContainer = document.getElementById(`video-${participant.identity}`);
@@ -167,7 +173,7 @@ function handleTrackAttached(track: RemoteTrack, participant: Participant) {
     syncMediaUI(participant);
 }
 
-room.on(RoomEvent.TrackSubscribed, handleTrackAttached);
+room.on(RoomEvent.TrackSubscribed, handleTrackSubscribed);
 room.on(RoomEvent.TrackMuted, (pub, p) => syncMediaUI(p));
 room.on(RoomEvent.TrackUnmuted, (pub, p) => syncMediaUI(p));
 room.on(RoomEvent.ParticipantConnected, (p) => { renderParticipant(p, p.identity); updateGridLayout(); });
