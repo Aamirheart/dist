@@ -1,171 +1,189 @@
 const LIVEKIT_URL = 'wss://demo-z1xi0pi0.livekit.cloud';
 const TOKEN = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3NjY1NzQ2NjEsImlkZW50aXR5IjoicGFydGljaXBhbnQtMiIsImlzcyI6IkFQSWlpajhGeFliUlZ6RiIsIm5hbWUiOiJwYXJ0aWNpcGFudC0yIiwibmJmIjoxNzY1OTY5ODYxLCJzdWIiOiJwYXJ0aWNpcGFudC0yIiwidmlkZW8iOnsicm9vbSI6Im15LXRlc3Qtcm9vbSIsInJvb21Kb2luIjp0cnVlfX0.oKBiVf9kBUbuVoUlbHog67E120QzKOq15BGuSyrNJgI';
 
-import { Room, RoomEvent, Track, LogLevel, setLogLevel } from 'livekit-client';
+import {
+  Room,
+  RoomEvent,
+  RemoteTrack,
+  Track,
+  LocalParticipant,
+  Participant,
+} from 'livekit-client';
 
-setLogLevel(LogLevel.warn);
+const room = new Room({ adaptiveStream: true, dynacast: true });
 
-let room: Room | undefined;
+// State Tracking
+let micEnabled = true;
+let camEnabled = true;
+let myDisplayName = "";
 
-const joinScreen = document.getElementById('join-screen')!;
-const callContainer = document.getElementById('call-container')!;
-const grid = document.getElementById('video-grid')!;
-const audioBtn = document.getElementById('audio-btn')!;
-const videoBtn = document.getElementById('video-btn')!;
+const errorDiv = document.getElementById('error-msg')!;
 
-const appActions = {
-  connect: async () => {
-    joinScreen.style.display = 'none';
-    callContainer.style.display = 'block';
+// 1. Lobby Setup - Fixed Assignment target error
+const lobbyMic = document.getElementById('lobby-mic');
+if (lobbyMic) {
+    lobbyMic.onclick = () => {
+        micEnabled = !micEnabled;
+        lobbyMic.classList.toggle('off', !micEnabled);
+        lobbyMic.innerText = micEnabled ? '🎤' : '🔇';
+    };
+}
 
-    room = new Room({ adaptiveStream: true, dynacast: true });
-    await room.connect(LIVEKIT_URL, TOKEN);
+const lobbyCam = document.getElementById('lobby-cam');
+if (lobbyCam) {
+    lobbyCam.onclick = () => {
+        camEnabled = !camEnabled;
+        lobbyCam.classList.toggle('off', !camEnabled);
+        lobbyCam.innerText = camEnabled ? '📷' : '🚫';
+    };
+}
 
-    // Audio ON, Video OFF
-    await room.localParticipant.setMicrophoneEnabled(true);
-    await room.localParticipant.setCameraEnabled(false);
-    updateAudioUI(true);
-    updateVideoUI(false);
+// 2. Join Functionality
+const joinBtn = document.getElementById('join-btn');
+if (joinBtn) {
+    joinBtn.onclick = async () => {
+        myDisplayName = (document.getElementById('username') as HTMLInputElement).value || 'Guest';
+        (errorDiv as HTMLElement).style.display = 'none';
 
-    // ✅ Add local participant tile
-    addParticipantTile(room.localParticipant);
+        try {
+            await room.connect(LIVEKIT_URL, TOKEN);
+            
+            document.getElementById('lobby-screen')!.classList.remove('active');
+            document.getElementById('call-ui')!.classList.add('active');
 
-    // ✅ Add already-present remote participants (CRITICAL FIX)
-    room.remoteParticipants.forEach((p) => {
-      addParticipantTile(p);
-      attachExistingTracks(p);
-    });
+            // Apply lobby settings immediately
+            await room.localParticipant.setMicrophoneEnabled(micEnabled);
+            await room.localParticipant.setCameraEnabled(camEnabled);
 
-    // ✅ Listen for future events
-    room
-      .on(RoomEvent.ParticipantConnected, (p) => {
-        addParticipantTile(p);
-        attachExistingTracks(p);
-      })
-      .on(RoomEvent.ParticipantDisconnected, removeParticipantTile)
-      .on(RoomEvent.TrackSubscribed, attachRemoteTrack)
-      .on(RoomEvent.TrackUnsubscribed, detachRemoteTrack);
-  },
+            // Sync meeting buttons UI
+            document.getElementById('toggle-mic')?.classList.toggle('off', !micEnabled);
+            document.getElementById('toggle-video')?.classList.toggle('off', !camEnabled);
 
-  toggleAudio: async () => {
-    if (!room) return;
-    const enabled = room.localParticipant.isMicrophoneEnabled;
-    await room.localParticipant.setMicrophoneEnabled(!enabled);
-    updateAudioUI(!enabled);
-  },
+            renderParticipant(room.localParticipant, myDisplayName);
+            updateGridLayout();
+        } catch (e: any) {
+            console.error(e);
+            (errorDiv as HTMLElement).style.display = 'block';
+            (errorDiv as HTMLElement).innerText = e.name === 'NotReadableError' 
+                ? "Camera is busy. Close other apps." 
+                : "Could not connect to meeting.";
+        }
+    };
+}
 
-  toggleVideo: async () => {
-    if (!room) return;
-
-    const enabled = room.localParticipant.isCameraEnabled;
-    await room.localParticipant.setCameraEnabled(!enabled);
-    updateVideoUI(!enabled);
-
-    if (!enabled) {
-      attachLocalCamera();
-    } else {
-      // Clear the video when turning camera off
-      const participant = room.localParticipant;
-      const tile = document.getElementById(`p-${participant.identity}`);
-      const video = tile?.querySelector('video') as HTMLVideoElement;
-      if (video) video.srcObject = null;
+// 3. Track Subscriptions
+room.on(RoomEvent.TrackSubscribed, (track: RemoteTrack, pub, participant) => {
+    if (track.kind === Track.Kind.Video) {
+        const el = track.attach();
+        const vContainer = document.getElementById(`video-${participant.identity}`);
+        if (vContainer) {
+            vContainer.innerHTML = ""; // Clear existing
+            vContainer.appendChild(el);
+        }
+    } else if (track.kind === Track.Kind.Audio) {
+        document.body.appendChild(track.attach());
     }
-  },
+    syncMediaUI(participant);
+});
 
-  disconnectRoom: () => {
-    room?.disconnect();
-    location.reload();
-  },
-};
+// Listen for remote mutes
+room.on(RoomEvent.TrackMuted, (pub, p) => syncMediaUI(p));
+room.on(RoomEvent.TrackUnmuted, (pub, p) => syncMediaUI(p));
 
-/* ---------------- PARTICIPANTS ---------------- */
+room.on(RoomEvent.ParticipantConnected, (p) => {
+    renderParticipant(p, p.identity);
+    updateGridLayout();
+});
 
-function addParticipantTile(participant: any) {
-  if (document.getElementById(`p-${participant.identity}`)) return;
+room.on(RoomEvent.ParticipantDisconnected, (p) => {
+    document.getElementById(`tile-${p.identity}`)?.remove();
+    updateGridLayout();
+});
 
-  const tile = document.createElement('div');
-  tile.className = 'video-tile';
-  tile.id = `p-${participant.identity}`;
+// 4. Rendering Engine
+function renderParticipant(p: Participant, name: string) {
+    if (document.getElementById(`tile-${p.identity}`)) return;
 
-  const video = document.createElement('video');
-  video.autoplay = true;
-  video.playsInline = true;
-  if (participant.isLocal) video.muted = true;
+    const tile = document.createElement('div');
+    tile.id = `tile-${p.identity}`;
+    tile.className = 'participant-tile';
+    
+    // Avatar Layer
+    const avatar = document.createElement('div');
+    avatar.id = `avatar-${p.identity}`;
+    avatar.className = 'avatar-container';
+    avatar.innerText = name.charAt(0).toUpperCase();
+    
+    // Video Area
+    const videoArea = document.createElement('div');
+    videoArea.id = `video-${p.identity}`;
+    videoArea.style.height = "100%";
+    
+    // Name Label
+    const nameTag = document.createElement('div');
+    nameTag.className = 'name-tag';
+    nameTag.innerText = name + (p instanceof LocalParticipant ? ' (You)' : '');
+    
+    tile.append(avatar, videoArea, nameTag);
+    document.getElementById('video-grid')!.appendChild(tile);
 
-  const label = document.createElement('div');
-  label.className = 'name-tag';
-  label.textContent = participant.identity;
-
-  tile.append(video, label);
-  grid.appendChild(tile);
-}
-
-function removeParticipantTile(participant: any) {
-  document.getElementById(`p-${participant.identity}`)?.remove();
-}
-
-/* ---------------- TRACK HANDLING ---------------- */
-
-// ✅ Attach tracks that already exist (MOST IMPORTANT FIX)
-function attachExistingTracks(participant: any) {
-  participant.getTrackPublications().forEach((pub: any) => {
-    if (pub.track && pub.kind === 'video') {
-      const tile = document.getElementById(`p-${participant.identity}`);
-      const video = tile?.querySelector('video') as HTMLVideoElement;
-      if (video) pub.track.attach(video);
+    // Initial publish render for local
+    if (p instanceof LocalParticipant) {
+        p.trackPublications.forEach(pub => {
+            if (pub.track && pub.kind === Track.Kind.Video) {
+                const el = pub.track.attach();
+                el.classList.add('local-video');
+                videoArea.appendChild(el);
+            }
+        });
     }
-  });
+    syncMediaUI(p);
 }
 
-// ✅ Local camera must be attached manually
-function attachLocalCamera() {
-  if (!room) return;
+function syncMediaUI(p: Participant) {
+    const videoEl = document.querySelector(`#video-${p.identity} video`) as HTMLElement;
+    const avatarEl = document.getElementById(`avatar-${p.identity}`);
+    const isCamOn = p.isCameraEnabled;
 
-  const participant = room.localParticipant;
-  const tile = document.getElementById(`p-${participant.identity}`);
-  if (!tile) return;
-
-  const video = tile.querySelector('video') as HTMLVideoElement;
-  const pub = participant.getTrackPublication(Track.Source.Camera);
-
-  if (pub?.videoTrack) {
-    pub.videoTrack.attach(video);
-    video.muted = true;
-  }
+    if (videoEl) videoEl.style.opacity = isCamOn ? "1" : "0";
+    if (avatarEl) avatarEl.style.zIndex = isCamOn ? "0" : "1";
 }
 
-// ✅ Remote tracks (future publishes)
-function attachRemoteTrack(track: any, pub: any, participant: any) {
-  if (track.kind !== 'video') return;
-
-  const tile = document.getElementById(`p-${participant.identity}`);
-  const video = tile?.querySelector('video') as HTMLVideoElement;
-  if (video) track.attach(video);
+function updateGridLayout() {
+    const grid = document.getElementById('video-grid')!;
+    const count = grid.children.length;
+    grid.setAttribute('data-participants', count.toString());
 }
 
-function detachRemoteTrack(_: any, pub: any, participant: any) {
-  if (pub.kind !== 'video') return;
-
-  const tile = document.getElementById(`p-${participant.identity}`);
-  const video = tile?.querySelector('video') as HTMLVideoElement;
-  if (video) video.srcObject = null;
+// 5. FIXED Controls - Standard 'if' checks to avoid esbuild errors
+const micToggle = document.getElementById('toggle-mic');
+if (micToggle) {
+    micToggle.onclick = async () => {
+        const enabled = !room.localParticipant.isMicrophoneEnabled;
+        await room.localParticipant.setMicrophoneEnabled(enabled);
+        micToggle.classList.toggle('off', !enabled);
+    };
 }
 
-/* ---------------- UI ---------------- */
-
-function updateAudioUI(enabled: boolean) {
-  audioBtn.textContent = enabled ? '🎤' : '🔇';
-  audioBtn.classList.toggle('off', !enabled);
+const camToggle = document.getElementById('toggle-video');
+if (camToggle) {
+    camToggle.onclick = async () => {
+        const enabled = !room.localParticipant.isCameraEnabled;
+        try {
+            await room.localParticipant.setCameraEnabled(enabled);
+            camToggle.classList.toggle('off', !enabled);
+            syncMediaUI(room.localParticipant);
+        } catch (e) {
+            alert("Camera is currently unavailable.");
+        }
+    };
 }
 
-function updateVideoUI(enabled: boolean) {
-  videoBtn.classList.toggle('off', !enabled);
+const leaveBtn = document.getElementById('leave-btn');
+if (leaveBtn) {
+    leaveBtn.onclick = async () => {
+        await room.disconnect();
+        document.getElementById('call-ui')!.classList.remove('active');
+        document.getElementById('end-screen')!.classList.add('active');
+    };
 }
-
-declare global {
-  interface Window {
-    appActions: typeof appActions;
-  }
-}
-
-window.appActions = appActions;
