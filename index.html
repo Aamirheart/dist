@@ -24,9 +24,22 @@
             width: 100%; padding: 14px; margin-bottom: 20px; background: #000;
             border: 1px solid var(--border); border-radius: 12px; color: white; box-sizing: border-box; outline: none; font-size: 16px;
         }
+        
+        /* Permissions Status Overlay */
+        #permission-status {
+            font-size: 14px; color: #aaa; margin-bottom: 15px; display: flex; align-items: center; justify-content: center; gap: 8px;
+        }
+
+        /* Loading Spinner */
+        .spinner {
+            width: 18px; height: 18px; border: 2px solid rgba(255,255,255,0.3); border-radius: 50%;
+            border-top-color: #fff; animation: spin 0.8s linear infinite; display: none;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
         .lobby-controls { display: flex; gap: 15px; margin-bottom: 25px; justify-content: center; }
         
-        /* Video Grid - Highly Responsive */
+        /* Video Grid */
         #call-ui { background: #000; flex-direction: column; }
         #video-container {
             flex: 1; width: 100%; display: flex; align-items: center; justify-content: center; padding: 10px; box-sizing: border-box; overflow: hidden;
@@ -35,15 +48,12 @@
             display: grid; gap: 10px; width: 100%; height: 100%; max-width: 1200px; justify-content: center; align-content: center;
         }
 
-        /* Responsive Grid Logic */
         #video-grid[data-participants="1"] { grid-template-columns: 1fr; max-width: 800px; }
         #video-grid[data-participants="2"] { grid-template-columns: 1fr 1fr; }
         @media (max-width: 768px) {
             #video-grid[data-participants="2"] { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
-            .glass-card { padding: 1.5rem; }
         }
 
-        /* Participant Tile & Avatar */
         .participant-tile {
             background: #111; border-radius: 16px; position: relative; overflow: hidden; 
             width: 100%; height: 100%; aspect-ratio: 16/9; border: 1px solid var(--border);
@@ -61,7 +71,6 @@
             padding: 4px 10px; border-radius: 6px; font-size: 12px; backdrop-filter: blur(10px); z-index: 3;
         }
 
-        /* Bottom Controls - Mobile Optimized */
         .control-bar {
             height: 80px; width: 100%; background: #0a0a0a; display: flex; align-items: center; justify-content: center; 
             gap: 15px; border-top: 1px solid var(--border); padding-bottom: env(safe-area-inset-bottom);
@@ -71,7 +80,13 @@
             display: flex; align-items: center; justify-content: center; transition: 0.2s;
         }
         .icon-btn.off { background: var(--danger) !important; }
-        .btn-join { background: var(--primary); color: white; border: none; padding: 14px; border-radius: 12px; font-weight: 600; cursor: pointer; width: 100%; font-size: 16px; }
+        
+        /* Enhanced Join Button */
+        .btn-join { 
+            background: var(--primary); color: white; border: none; padding: 14px; border-radius: 12px; 
+            font-weight: 600; cursor: pointer; width: 100%; font-size: 16px; display: flex; align-items: center; justify-content: center; gap: 10px;
+        }
+        .btn-join:disabled { background: #333; cursor: not-allowed; color: #777; }
         
         #error-msg { color: var(--danger); font-size: 14px; margin-bottom: 15px; display: none; }
     </style>
@@ -82,12 +97,23 @@
         <div class="glass-card">
             <h2 style="margin-top: 0;">Meeting Setup</h2>
             <div id="error-msg"></div>
+            
+            <div id="permission-status">
+                <div class="spinner" id="perm-spinner" style="display: block;"></div>
+                <span id="perm-text">Requesting Camera/Mic access...</span>
+            </div>
+
             <input type="text" id="username" placeholder="Enter your name" />
+            
             <div class="lobby-controls">
                 <button id="lobby-mic" class="icon-btn">🎤</button>
                 <button id="lobby-cam" class="icon-btn">📷</button>
             </div>
-            <button id="join-btn" class="btn-join">Join Meeting</button>
+
+            <button id="join-btn" class="btn-join">
+                <span id="join-spinner" class="spinner"></span>
+                <span id="join-text">Join Meeting</span>
+            </button>
         </div>
     </div>
 
