@@ -15,22 +15,30 @@
         .screen { display: none; height: 100vh; width: 100%; flex-direction: column; align-items: center; justify-content: center; position: absolute; inset: 0; }
         .active { display: flex; }
 
-        /* Lobby Card */
         .glass-card {
-            background: var(--card); padding: 2rem; border-radius: 24px; border: 1px solid var(--border);
-            width: 90%; max-width: 400px; text-align: center; box-shadow: 0 20px 50px rgba(0,0,0,0.7);
+            background: var(--card); padding: 1.5rem; border-radius: 24px; border: 1px solid var(--border);
+            width: 90%; max-width: 420px; text-align: center; box-shadow: 0 20px 50px rgba(0,0,0,0.7);
         }
+
+        #lobby-preview-container {
+            width: 100%; aspect-ratio: 16/9; background: #000; border-radius: 16px; 
+            margin-bottom: 20px; overflow: hidden; border: 1px solid var(--border);
+            position: relative; display: flex; align-items: center; justify-content: center;
+        }
+        #lobby-preview-container video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); z-index: 2; }
+        
+        #camera-off-overlay { 
+            position: absolute; inset: 0; background: #111; display: none; 
+            align-items: center; justify-content: center; font-size: 64px; z-index: 5; 
+        }
+
         input {
             width: 100%; padding: 14px; margin-bottom: 20px; background: #000;
             border: 1px solid var(--border); border-radius: 12px; color: white; box-sizing: border-box; outline: none; font-size: 16px;
         }
         
-        /* Permissions Status Overlay */
-        #permission-status {
-            font-size: 14px; color: #aaa; margin-bottom: 15px; display: flex; align-items: center; justify-content: center; gap: 8px;
-        }
+        #permission-status { font-size: 12px; color: #aaa; margin-bottom: 10px; display: flex; align-items: center; justify-content: center; gap: 8px; }
 
-        /* Loading Spinner */
         .spinner {
             width: 18px; height: 18px; border: 2px solid rgba(255,255,255,0.3); border-radius: 50%;
             border-top-color: #fff; animation: spin 0.8s linear infinite; display: none;
@@ -39,53 +47,25 @@
 
         .lobby-controls { display: flex; gap: 15px; margin-bottom: 25px; justify-content: center; }
         
-        /* Video Grid */
         #call-ui { background: #000; flex-direction: column; }
-        #video-container {
-            flex: 1; width: 100%; display: flex; align-items: center; justify-content: center; padding: 10px; box-sizing: border-box; overflow: hidden;
-        }
-        #video-grid {
-            display: grid; gap: 10px; width: 100%; height: 100%; max-width: 1200px; justify-content: center; align-content: center;
-        }
+        #video-container { flex: 1; width: 100%; display: flex; align-items: center; justify-content: center; padding: 10px; box-sizing: border-box; overflow: hidden; }
+        #video-grid { display: grid; gap: 10px; width: 100%; height: 100%; max-width: 1200px; justify-content: center; align-content: center; }
 
         #video-grid[data-participants="1"] { grid-template-columns: 1fr; max-width: 800px; }
         #video-grid[data-participants="2"] { grid-template-columns: 1fr 1fr; }
-        @media (max-width: 768px) {
-            #video-grid[data-participants="2"] { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
-        }
-
-        .participant-tile {
-            background: #111; border-radius: 16px; position: relative; overflow: hidden; 
-            width: 100%; height: 100%; aspect-ratio: 16/9; border: 1px solid var(--border);
-        }
-        .avatar-container {
-            position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-            background: radial-gradient(circle, #222 0%, #111 100%);
-            font-size: clamp(40px, 10vw, 80px); font-weight: bold; color: var(--primary); z-index: 1;
-        }
+        
+        .participant-tile { background: #111; border-radius: 16px; position: relative; overflow: hidden; width: 100%; height: 100%; aspect-ratio: 16/9; border: 1px solid var(--border); }
+        .avatar-container { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: radial-gradient(circle, #222 0%, #111 100%); font-size: clamp(40px, 10vw, 80px); font-weight: bold; color: var(--primary); z-index: 1; }
         video { width: 100%; height: 100%; object-fit: cover; position: relative; z-index: 2; transition: opacity 0.3s; }
         .local-video { transform: scaleX(-1); }
 
-        .name-tag {
-            position: absolute; bottom: 10px; left: 10px; background: rgba(0,0,0,0.6);
-            padding: 4px 10px; border-radius: 6px; font-size: 12px; backdrop-filter: blur(10px); z-index: 3;
-        }
+        .name-tag { position: absolute; bottom: 10px; left: 10px; background: rgba(0,0,0,0.6); padding: 4px 10px; border-radius: 6px; font-size: 12px; backdrop-filter: blur(10px); z-index: 3; }
 
-        .control-bar {
-            height: 80px; width: 100%; background: #0a0a0a; display: flex; align-items: center; justify-content: center; 
-            gap: 15px; border-top: 1px solid var(--border); padding-bottom: env(safe-area-inset-bottom);
-        }
-        .icon-btn {
-            width: 50px; height: 50px; border-radius: 50%; border: none; background: #222; color: white; cursor: pointer; font-size: 20px;
-            display: flex; align-items: center; justify-content: center; transition: 0.2s;
-        }
+        .control-bar { height: 80px; width: 100%; background: #0a0a0a; display: flex; align-items: center; justify-content: center; gap: 15px; border-top: 1px solid var(--border); padding-bottom: env(safe-area-inset-bottom); }
+        .icon-btn { width: 50px; height: 50px; border-radius: 50%; border: none; background: #222; color: white; cursor: pointer; font-size: 20px; display: flex; align-items: center; justify-content: center; transition: 0.2s; }
         .icon-btn.off { background: var(--danger) !important; }
         
-        /* Enhanced Join Button */
-        .btn-join { 
-            background: var(--primary); color: white; border: none; padding: 14px; border-radius: 12px; 
-            font-weight: 600; cursor: pointer; width: 100%; font-size: 16px; display: flex; align-items: center; justify-content: center; gap: 10px;
-        }
+        .btn-join { background: var(--primary); color: white; border: none; padding: 14px; border-radius: 12px; font-weight: 600; cursor: pointer; width: 100%; font-size: 16px; display: flex; align-items: center; justify-content: center; gap: 10px; }
         .btn-join:disabled { background: #333; cursor: not-allowed; color: #777; }
         
         #error-msg { color: var(--danger); font-size: 14px; margin-bottom: 15px; display: none; }
@@ -95,12 +75,15 @@
 
     <div id="lobby-screen" class="screen active">
         <div class="glass-card">
-            <h2 style="margin-top: 0;">Meeting Setup</h2>
-            <div id="error-msg"></div>
+            <h2 style="margin-top: 0; margin-bottom: 15px;">Meeting Setup</h2>
             
+            <div id="lobby-preview-container">
+                <div id="camera-off-overlay">👤</div>
+            </div>
+
             <div id="permission-status">
                 <div class="spinner" id="perm-spinner" style="display: block;"></div>
-                <span id="perm-text">Requesting Camera/Mic access...</span>
+                <span id="perm-text">Configuring media...</span>
             </div>
 
             <input type="text" id="username" placeholder="Enter your name" />
@@ -114,6 +97,7 @@
                 <span id="join-spinner" class="spinner"></span>
                 <span id="join-text">Join Meeting</span>
             </button>
+            <div id="error-msg"></div>
         </div>
     </div>
 
@@ -131,8 +115,8 @@
     <div id="end-screen" class="screen">
         <div class="glass-card">
             <h1>Meeting ended</h1>
-            <p style="color: #666">You have left the conversation.</p>
-            <button onclick="location.reload()" class="btn-join" style="margin-top: 15px;">Join Again</button>
+            <p style="color: #666; margin-bottom: 25px;">You have left the conversation.</p>
+            <button onclick="location.reload()" class="btn-join">Join Again</button>
         </div>
     </div>
 

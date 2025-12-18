@@ -10,75 +10,102 @@ import {
   Participant,
   createLocalTracks,
   LocalTrack,
+  LocalVideoTrack,
 } from 'livekit-client';
+
+
 
 const room = new Room({ adaptiveStream: true, dynacast: true });
 
-
-// State Tracking
 let micEnabled = true;
 let camEnabled = true;
 let myDisplayName = "";
 let localTracks: LocalTrack[] = [];
 
-// DOM Elements
 const errorDiv = document.getElementById('error-msg')!;
 const joinBtn = document.getElementById('join-btn') as HTMLButtonElement;
-const joinText = document.getElementById('join-text')!;
-const joinSpinner = document.getElementById('join-spinner')!;
-const permStatus = document.getElementById('permission-status')!;
+const lobbyPreview = document.getElementById('lobby-preview-container')!;
+const camOffOverlay = document.getElementById('camera-off-overlay')!;
+const lobbyMic = document.getElementById('lobby-mic')!;
+const lobbyCam = document.getElementById('lobby-cam')!;
 
-// 1. EARLY PERMISSIONS - Ask as soon as page loads
-async function requestPermissionsEarly() {
+// 1. EARLY PERMISSIONS & PREVIEW
+async function initializeLobby() {
     try {
         localTracks = await createLocalTracks({
             audio: true,
             video: { facingMode: 'user' }
         });
-        console.log("Permissions granted early.");
-        
-        // Hide the permission requesting UI
-        permStatus.style.opacity = '0.5';
+
+        const videoTrack = localTracks.find(t => t.kind === Track.Kind.Video) as LocalVideoTrack;
+        if (videoTrack) {
+            const el = videoTrack.attach();
+            lobbyPreview.appendChild(el);
+        }
+
         document.getElementById('perm-text')!.innerText = "Media ready.";
         document.getElementById('perm-spinner')!.style.display = 'none';
     } catch (e) {
-        console.error("User denied permissions or error occurred", e);
-        (errorDiv as HTMLElement).style.display = 'block';
-        (errorDiv as HTMLElement).innerText = "Please allow camera access to continue.";
+        console.error("Permissions denied", e);
+        errorDiv.style.display = 'block';
+        errorDiv.innerText = "Camera/Mic access is required.";
     }
 }
 
-requestPermissionsEarly();
+initializeLobby();
 
-// Lobby Controls
-const lobbyMic = document.getElementById('lobby-mic');
-if (lobbyMic) {
-    lobbyMic.onclick = () => {
-        micEnabled = !micEnabled;
-        lobbyMic.classList.toggle('off', !micEnabled);
-        lobbyMic.innerText = micEnabled ? '🎤' : '🔇';
-    };
-}
+// 2. LOBBY TOGGLE LOGIC
+lobbyMic.onclick = () => {
+    micEnabled = !micEnabled;
+    lobbyMic.classList.toggle('off', !micEnabled);
+    lobbyMic.innerText = micEnabled ? '🎤' : '🔇';
+    
+    localTracks.forEach(t => {
+        if (t.kind === Track.Kind.Audio) {
+            if (micEnabled) {
+                t.unmute();
+            } else {
+                t.mute();
+            }
+        }
+    });
+};
 
-const lobbyCam = document.getElementById('lobby-cam');
-if (lobbyCam) {
-    lobbyCam.onclick = () => {
-        camEnabled = !camEnabled;
-        lobbyCam.classList.toggle('off', !camEnabled);
-        lobbyCam.innerText = camEnabled ? '📷' : '🚫';
-    };
-}
+lobbyCam.onclick = () => {
+    camEnabled = !camEnabled;
+    lobbyCam.classList.toggle('off', !camEnabled);
+    lobbyCam.innerText = camEnabled ? '📷' : '🚫';
 
-// 2. JOIN FUNCTIONALITY with Loading State
+    localTracks.forEach(t => {
+        if (t.kind === Track.Kind.Video) {
+            const videoTrack = t as LocalVideoTrack;
+            
+            if (camEnabled) {
+                // Turn camera back on
+                videoTrack.unmute();
+            } else {
+                // Turn camera off
+                videoTrack.mute();
+            }
+        }
+    });
+
+    // Update UI
+    const videoEl = lobbyPreview.querySelector('video');
+    if (videoEl) {
+        videoEl.style.display = camEnabled ? "block" : "none";
+    }
+    camOffOverlay.style.display = camEnabled ? "none" : "flex";
+};
+
+// 3. JOIN CALL LOGIC
 if (joinBtn) {
     joinBtn.onclick = async () => {
         myDisplayName = (document.getElementById('username') as HTMLInputElement).value || 'Guest';
-        (errorDiv as HTMLElement).style.display = 'none';
-
-        // START LOADING STATE
+        
         joinBtn.disabled = true;
-        joinText.innerText = "Joining...";
-        (joinSpinner as HTMLElement).style.display = "block";
+        document.getElementById('join-text')!.innerText = "Connecting...";
+        document.getElementById('join-spinner')!.style.display = "block";
 
         try {
             await room.connect(LIVEKIT_URL, TOKEN);
@@ -86,55 +113,52 @@ if (joinBtn) {
             document.getElementById('lobby-screen')!.classList.remove('active');
             document.getElementById('call-ui')!.classList.add('active');
 
-            // Publish the tracks we pre-acquired
+            // Pass initial state to publication
             for (const track of localTracks) {
                 if (track.kind === Track.Kind.Audio) {
-                    await room.localParticipant.publishTrack(track, { enabled: micEnabled });
-                } else {
-                    await room.localParticipant.publishTrack(track, { enabled: camEnabled });
+                    await room.localParticipant.publishTrack(track);
+                    if (!micEnabled) {
+                        await room.localParticipant.setMicrophoneEnabled(false);
+                    }
+                } else if (track.kind === Track.Kind.Video) {
+                    await room.localParticipant.publishTrack(track);
+                    if (!camEnabled) {
+                        await room.localParticipant.setCameraEnabled(false);
+                    }
                 }
             }
 
-            // Sync meeting buttons UI
             document.getElementById('toggle-mic')?.classList.toggle('off', !micEnabled);
             document.getElementById('toggle-video')?.classList.toggle('off', !camEnabled);
 
             renderParticipant(room.localParticipant, myDisplayName);
 
-            // 3. HANDLE PEOPLE ALREADY IN THE ROOM
-            room.remoteParticipants.forEach((participant) => {
-                console.log('Existing participant found:', participant.identity);
-                renderParticipant(participant, participant.identity);
-                
-                // Manually check for existing tracks
-                participant.trackPublications.forEach((pub) => {
-                    if (pub.track && pub.isSubscribed) {
-                        handleTrackAttached(pub.track as RemoteTrack, participant);
-                    }
+            room.remoteParticipants.forEach((p) => {
+                renderParticipant(p, p.identity);
+                p.trackPublications.forEach(pub => {
+                    if (pub.track && pub.isSubscribed) handleTrackAttached(pub.track as RemoteTrack, p);
                 });
             });
 
             updateGridLayout();
-        } catch (e: any) {
+        } catch (e) {
             console.error(e);
-            // RESET LOADING STATE ON ERROR
             joinBtn.disabled = false;
-            joinText.innerText = "Join Meeting";
-            (joinSpinner as HTMLElement).style.display = "none";
-
-            (errorDiv as HTMLElement).style.display = 'block';
-            (errorDiv as HTMLElement).innerText = "Could not connect to meeting.";
+            document.getElementById('join-text')!.innerText = "Join Meeting";
+            document.getElementById('join-spinner')!.style.display = "none";
+            errorDiv.style.display = 'block';
+            errorDiv.innerText = "Failed to connect.";
         }
     };
 }
 
-// Track Subscriptions helper
+// 4. CALL LOGIC & RENDERING
 function handleTrackAttached(track: RemoteTrack, participant: Participant) {
     if (track.kind === Track.Kind.Video) {
         const el = track.attach();
         const vContainer = document.getElementById(`video-${participant.identity}`);
         if (vContainer) {
-            vContainer.innerHTML = ""; 
+            vContainer.innerHTML = "";
             vContainer.appendChild(el);
         }
     } else if (track.kind === Track.Kind.Audio) {
@@ -143,47 +167,30 @@ function handleTrackAttached(track: RemoteTrack, participant: Participant) {
     syncMediaUI(participant);
 }
 
-room.on(RoomEvent.TrackSubscribed, (track: RemoteTrack, pub, participant) => {
-    handleTrackAttached(track, participant);
-});
-
+room.on(RoomEvent.TrackSubscribed, handleTrackAttached);
 room.on(RoomEvent.TrackMuted, (pub, p) => syncMediaUI(p));
 room.on(RoomEvent.TrackUnmuted, (pub, p) => syncMediaUI(p));
+room.on(RoomEvent.ParticipantConnected, (p) => { renderParticipant(p, p.identity); updateGridLayout(); });
+room.on(RoomEvent.ParticipantDisconnected, (p) => { document.getElementById(`tile-${p.identity}`)?.remove(); updateGridLayout(); });
 
-room.on(RoomEvent.ParticipantConnected, (p) => {
-    renderParticipant(p, p.identity);
-    updateGridLayout();
-});
-
-room.on(RoomEvent.ParticipantDisconnected, (p) => {
-    document.getElementById(`tile-${p.identity}`)?.remove();
-    updateGridLayout();
-});
-
-// 4. Rendering Engine
 function renderParticipant(p: Participant, name: string) {
     if (document.getElementById(`tile-${p.identity}`)) return;
-
     const tile = document.createElement('div');
     tile.id = `tile-${p.identity}`;
     tile.className = 'participant-tile';
-    
     const avatar = document.createElement('div');
     avatar.id = `avatar-${p.identity}`;
     avatar.className = 'avatar-container';
     avatar.innerText = name.charAt(0).toUpperCase();
-    
     const videoArea = document.createElement('div');
     videoArea.id = `video-${p.identity}`;
     videoArea.style.height = "100%";
-    
     const nameTag = document.createElement('div');
     nameTag.className = 'name-tag';
     nameTag.innerText = name + (p instanceof LocalParticipant ? ' (You)' : '');
-    
     tile.append(avatar, videoArea, nameTag);
     document.getElementById('video-grid')!.appendChild(tile);
-
+    
     if (p instanceof LocalParticipant) {
         p.trackPublications.forEach(pub => {
             if (pub.track && pub.kind === Track.Kind.Video) {
@@ -200,46 +207,31 @@ function syncMediaUI(p: Participant) {
     const videoEl = document.querySelector(`#video-${p.identity} video`) as HTMLElement;
     const avatarEl = document.getElementById(`avatar-${p.identity}`);
     const isCamOn = p.isCameraEnabled;
-
     if (videoEl) videoEl.style.opacity = isCamOn ? "1" : "0";
     if (avatarEl) avatarEl.style.zIndex = isCamOn ? "0" : "1";
 }
 
 function updateGridLayout() {
     const grid = document.getElementById('video-grid')!;
-    const count = grid.children.length;
-    grid.setAttribute('data-participants', count.toString());
+    grid.setAttribute('data-participants', grid.children.length.toString());
 }
 
-// 5. Controls
-const micToggle = document.getElementById('toggle-mic');
-if (micToggle) {
-    micToggle.onclick = async () => {
-        const enabled = !room.localParticipant.isMicrophoneEnabled;
-        await room.localParticipant.setMicrophoneEnabled(enabled);
-        micToggle.classList.toggle('off', !enabled);
-    };
-}
+// 5. LEAVE & UI CONTROLS
+document.getElementById('leave-btn')!.onclick = async () => {
+    await room.disconnect();
+    document.getElementById('call-ui')!.classList.remove('active');
+    document.getElementById('end-screen')!.classList.add('active');
+};
 
-const camToggle = document.getElementById('toggle-video');
-if (camToggle) {
-    camToggle.onclick = async () => {
-        const enabled = !room.localParticipant.isCameraEnabled;
-        try {
-            await room.localParticipant.setCameraEnabled(enabled);
-            camToggle.classList.toggle('off', !enabled);
-            syncMediaUI(room.localParticipant);
-        } catch (e) {
-            alert("Camera is currently unavailable.");
-        }
-    };
-}
+document.getElementById('toggle-mic')!.onclick = async () => {
+    const enabled = !room.localParticipant.isMicrophoneEnabled;
+    await room.localParticipant.setMicrophoneEnabled(enabled);
+    document.getElementById('toggle-mic')!.classList.toggle('off', !enabled);
+};
 
-const leaveBtn = document.getElementById('leave-btn');
-if (leaveBtn) {
-    leaveBtn.onclick = async () => {
-        await room.disconnect();
-        document.getElementById('call-ui')!.classList.remove('active');
-        document.getElementById('end-screen')!.classList.add('active');
-    };
-}
+document.getElementById('toggle-video')!.onclick = async () => {
+    const enabled = !room.localParticipant.isCameraEnabled;
+    await room.localParticipant.setCameraEnabled(enabled);
+    document.getElementById('toggle-video')!.classList.toggle('off', !enabled);
+    syncMediaUI(room.localParticipant);
+};
